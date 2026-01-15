@@ -102,7 +102,7 @@ def save_as_markdown(job: JobData, output_dir: Path) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Generate safe filename
-    filename = _sanitize_filename(f"{job.title} {job.company_name}.md")
+    filename = _sanitize_filename(f"{job.title} - {job.company_name}.md")
     output_path = output_dir / filename
     
     # Build YAML frontmatter
