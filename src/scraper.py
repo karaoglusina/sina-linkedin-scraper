@@ -1,25 +1,61 @@
-from playwright.sync_api import sync_playwright, Page, Browser
+"""
+Browser automation using Playwright.
+
+PERFORMANCE OPTIMIZATIONS:
+1. Removed unnecessary fixed waits
+2. Use smart waiting (wait for elements, not arbitrary time)
+3. Reduced timeout values for quick checks
+4. Browser can be reused for batch scraping
+"""
+
+from playwright.sync_api import sync_playwright, Page, Browser, Playwright
 from contextlib import contextmanager
-from typing import Generator
+from typing import Generator, Optional
+
+# Global playwright instance for browser reuse
+_playwright_instance: Optional[Playwright] = None
+_browser_instance: Optional[Browser] = None
+
+
+def get_browser(headless: bool = True) -> Browser:
+    """
+    Get or create a browser instance (singleton pattern).
+    
+    PERFORMANCE: Reusing browser saves ~2 seconds per scrape.
+    Call close_browser() when done with all scraping.
+    """
+    global _playwright_instance, _browser_instance
+    
+    if _browser_instance is None or not _browser_instance.is_connected():
+        if _playwright_instance is None:
+            _playwright_instance = sync_playwright().start()
+        _browser_instance = _playwright_instance.chromium.launch(headless=headless)
+    
+    return _browser_instance
+
+
+def close_browser() -> None:
+    """Close the browser and playwright instances."""
+    global _playwright_instance, _browser_instance
+    
+    if _browser_instance:
+        _browser_instance.close()
+        _browser_instance = None
+    
+    if _playwright_instance:
+        _playwright_instance.stop()
+        _playwright_instance = None
 
 
 @contextmanager
 def create_browser(headless: bool = True) -> Generator[Browser, None, None]:
     """
-    Context manager for browser lifecycle.
+    Context manager for browser lifecycle (single-use).
     
-    Usage:
-        with create_browser() as browser:
-            page = browser.new_page()
-            # ... do stuff
-        # Browser automatically closes here
-    
-    Args:
-        headless: If True, browser runs invisibly. Set False for debugging.
+    For single scrapes or when you want automatic cleanup.
+    For batch scraping, use get_browser() instead.
     """
     with sync_playwright() as playwright:
-        # Launch Chromium browser
-        # Other options: playwright.firefox, playwright.webkit
         browser = playwright.chromium.launch(headless=headless)
         try:
             yield browser
@@ -31,130 +67,79 @@ def navigate_to_job(browser: Browser, url: str) -> Page:
     """
     Navigate to a LinkedIn job URL and wait for content to load.
     
-    KEY CONCEPT: Waiting Strategy
-    - We can't just navigate and immediately scrape
-    - JavaScript needs time to fetch and render data
-    - We wait for specific elements that indicate the page is ready
-    
-    Args:
-        browser: Playwright browser instance
-        url: LinkedIn job posting URL
-        
-    Returns:
-        Page object ready for data extraction
+    OPTIMIZED: Reduced waits from ~5s to ~0.5s
     """
-    # Create a new page (like opening a new tab)
     page = browser.new_page()
     
-    # Navigate to the URL
-    # Playwright waits for the initial load automatically
+    # Navigate - domcontentloaded is faster than load
     page.goto(url, wait_until="domcontentloaded")
     
-    # Handle cookie consent banner if present
-    _handle_cookie_consent(page)
+    # Handle popups quickly (in parallel conceptually)
+    _handle_popups_fast(page)
     
-    # Dismiss login popup if present
-    _dismiss_login_popup(page)
-    
-    # Check if job has expired (redirected to search page)
-    # But not if we're still on a /jobs/view/ page
-    if "/jobs/view/" not in page.url and ("/jobs/search" in page.url or "expired" in page.url):
+    # Check for redirect (expired job)
+    if "/jobs/view/" not in page.url and "/jobs/search" in page.url:
+        page.close()
         raise Exception("Job listing has expired or is no longer available")
     
-    # Wait for the job title to be present (most reliable element)
-    # This is our signal that the page has fully rendered
+    # Wait for the job title - this is the key indicator
     try:
         page.wait_for_selector(".top-card-layout__title, .topcard__title, h1", timeout=10000)
         print("  ✓ Job title found")
     except Exception as e:
-        raise Exception(f"Could not find job content. The page may have changed or the job expired. Error: {e}")
+        page.close()
+        raise Exception(f"Could not find job content: {e}")
     
-    # Wait a bit more for all content to load
-    page.wait_for_timeout(1000)
-    
-    # Handle "Show more" button if present
-    # Some descriptions are truncated and need expansion
+    # Expand description if truncated
     _expand_description(page)
     
     return page
 
 
-def _handle_cookie_consent(page: Page) -> None:
+def _handle_popups_fast(page: Page) -> None:
     """
-    Dismiss cookie consent banner if present.
+    Quickly dismiss cookie banner and login popup.
     
-    LinkedIn shows a cookie consent popup that can block interaction.
-    We need to accept or dismiss it to proceed.
-    """
-    try:
-        # Wait a moment for the page to settle
-        page.wait_for_timeout(1000)
-        
-        # Look for common cookie consent buttons
-        # LinkedIn uses different text in different languages
-        consent_buttons = [
-            'button:has-text("Accepteren")',  # Dutch
-            'button:has-text("Accept")',      # English
-            'button:has-text("Akzeptieren")', # German
-            'button:has-text("Accepter")',    # French
-            '[data-tracking-control-name="ga-cookie.consent.accept.v4"]',
-        ]
-        
-        for selector in consent_buttons:
-            try:
-                button = page.locator(selector).first
-                if button.is_visible(timeout=1000):
-                    button.click()
-                    print("  ✓ Accepted cookies")
-                    page.wait_for_timeout(500)
-                    return
-            except:
-                continue
-    except Exception:
-        # Cookie banner might not be present - that's fine
-        pass
-
-
-def _dismiss_login_popup(page: Page) -> None:
-    """
-    Dismiss the login/signup popup that LinkedIn shows.
+    IMPORTANT: LinkedIn shows a login modal that BLOCKS the cookie button.
+    We must dismiss the modal FIRST, then accept cookies.
     
-    LinkedIn shows a modal asking users to sign in.
-    Pressing Escape or clicking outside dismisses it.
+    OPTIMIZED: 
+    - Press Escape first to dismiss modal overlay
+    - Use force=True for cookie click to avoid overlay issues
+    - Very short timeouts
     """
+    # FIRST: Dismiss any modal overlay (login popup)
     try:
-        # Wait a moment for any popup to appear
-        page.wait_for_timeout(1000)
-        
-        # Try pressing Escape multiple times to dismiss any popups
-        for _ in range(3):
-            page.keyboard.press("Escape")
-            page.wait_for_timeout(300)
-        
-        print("  ✓ Dismissed popups")
-        
-    except Exception:
-        # Modal might not be present - that's fine
+        page.keyboard.press("Escape")
+    except:
         pass
+    
+    # THEN: Try to accept cookies (use force=True to bypass any remaining overlay)
+    try:
+        for selector in [
+            'button:has-text("Accept")',
+            'button:has-text("Accepteren")',
+        ]:
+            button = page.locator(selector).first
+            if button.is_visible(timeout=300):
+                button.click(force=True, timeout=1000)  # force=True bypasses overlay
+                print("  ✓ Accepted cookies")
+                break
+    except:
+        pass  # Cookie banner might not exist - that's fine
+    
+    print("  ✓ Dismissed popups")
 
 
 def _expand_description(page: Page) -> None:
     """
-    Click "Show more" button to expand truncated job descriptions.
+    Click "Show more" button if present.
     
-    LinkedIn often truncates long descriptions behind a "Show more" button.
-    We need to click it to get the full content.
+    OPTIMIZED: No arbitrary wait after click
     """
     try:
-        # Look for "Show more" button in the description section
-        show_more_button = page.locator(
-            ".description__text button:has-text('Show more')"
-        )
-        
-        if show_more_button.is_visible():
-            show_more_button.click()
-            # Wait for the animation to complete
-            page.wait_for_timeout(500)
-    except Exception:
-        # Button might not exist or already expanded - that's fine
+        show_more = page.locator(".description__text button:has-text('Show more')")
+        if show_more.is_visible(timeout=500):
+            show_more.click()
+    except:
         pass
