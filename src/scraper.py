@@ -78,17 +78,21 @@ def navigate_to_job(browser: Browser, url: str) -> Page:
     _handle_popups_fast(page)
     
     # Check for redirect (expired job)
-    if "/jobs/view/" not in page.url and "/jobs/search" in page.url:
+    # LinkedIn redirects expired jobs to search pages with ?trk=expired_jd_redirect
+    # or removes /view/ from the URL
+    current_url = page.url.lower()
+    if "/jobs/view/" not in current_url or "expired" in current_url:
         page.close()
         raise Exception("Job listing has expired or is no longer available")
     
-    # Wait for the job title - this is the key indicator
+    # Wait for the job title - must be in the job card, not a generic h1
     try:
-        page.wait_for_selector(".top-card-layout__title, .topcard__title, h1", timeout=10000)
+        # Use specific job title selectors (not generic h1 which matches search pages)
+        page.wait_for_selector(".top-card-layout__title, .topcard__title", timeout=10000)
         print("  ✓ Job title found")
     except Exception as e:
         page.close()
-        raise Exception(f"Could not find job content: {e}")
+        raise Exception(f"Could not find job content - page may have changed or job expired: {e}")
     
     # Expand description if truncated
     _expand_description(page)
