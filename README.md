@@ -44,7 +44,3 @@ python src/main.py "https://linkedin.com/jobs/view/..." -m -o ./my-jobs
 
 - **JSON**: Saved to `output/jobs.json`
 - **Markdown**: Saved to `output/<Job Title> <Company>.md`
-
-## License
-
-MIT
