@@ -21,7 +21,7 @@ from urllib.parse import urljoin, urlparse, parse_qs
 from playwright.sync_api import Page
 from typing import Optional
 
-from .types import JobData
+from .models import JobData
 
 
 def extract_job_data(page: Page, url: str) -> JobData:

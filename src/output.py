@@ -24,7 +24,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from .types import JobData
+from .models import JobData
 
 
 def save_as_json(job: JobData, output_dir: Path) -> Path:
