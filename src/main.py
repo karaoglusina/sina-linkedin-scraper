@@ -3,17 +3,13 @@
 LinkedIn Job Scraper - CLI Entry Point
 
 Usage:
-    python src/main.py "https://linkedin.com/jobs/view/..." [options]
+    python -m src.main "https://linkedin.com/jobs/view/..." [options]
 
 Options:
-    -m, --markdown    Also create a Markdown file
-    -o, --output      Output directory (default: ./output)
-    --no-headless     Show browser window (for debugging)
-
-KEY CONCEPT: CLI Design
-- Positional argument for the required URL
-- Optional flags for behavior modification
-- Sensible defaults that can be overridden
+    -m, --markdown      Also create a Markdown file
+    -o, --output        JSON output directory (default: ./output)
+    --md-dir            Markdown output directory (default: same as --output)
+    --no-headless       Show browser window (for debugging)
 """
 
 import argparse
@@ -43,15 +39,16 @@ def main():
         job_data = scrape_job(args.url, headless=not args.no_headless)
         
         # Save outputs
-        output_dir = Path(args.output)
+        json_dir = Path(args.output)
+        md_dir = Path(args.md_dir) if args.md_dir else json_dir
         
         # Always save JSON
-        json_path = save_as_json(job_data, output_dir)
+        json_path = save_as_json(job_data, json_dir)
         print(f"✅ Saved JSON: {json_path}")
         
         # Optionally save Markdown
         if args.markdown:
-            md_path = save_as_markdown(job_data, output_dir)
+            md_path = save_as_markdown(job_data, md_dir)
             print(f"✅ Saved Markdown: {md_path}")
         
         print(f"\n📋 Job: {job_data.title} at {job_data.company_name}")
@@ -80,11 +77,17 @@ Examples:
     # Scrape a job (JSON only)
     python -m src.main "https://linkedin.com/jobs/view/..."
     
-    # Scrape with Markdown output
+    # Scrape with Markdown output (same directory)
     python -m src.main "https://linkedin.com/jobs/view/..." -m
     
-    # Custom output directory
-    python -m src.main "https://linkedin.com/jobs/view/..." -m -o ./my-jobs
+    # Custom JSON directory
+    python -m src.main "https://linkedin.com/jobs/view/..." -o ./data
+    
+    # JSON and Markdown in different directories
+    python -m src.main "https://linkedin.com/jobs/view/..." -m -o ./data --md-dir ./notes
+    
+    # Markdown to a specific folder (e.g., Obsidian vault)
+    python -m src.main "https://linkedin.com/jobs/view/..." -m --md-dir ~/Documents/Obsidian/Jobs
         """
     )
     
@@ -102,7 +105,13 @@ Examples:
     parser.add_argument(
         "-o", "--output",
         default="./output",
-        help="Output directory (default: ./output)"
+        help="JSON output directory (default: ./output)"
+    )
+    
+    parser.add_argument(
+        "--md-dir",
+        default=None,
+        help="Markdown output directory (default: same as --output)"
     )
     
     parser.add_argument(
