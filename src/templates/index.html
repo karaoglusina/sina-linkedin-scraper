@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LinkedIn Job Scraper</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #0077b5 0%, #00a0dc 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        
+        .content {
+            padding: 30px;
+        }
+        
+        .section {
+            margin-bottom: 30px;
+        }
+        
+        .section-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .section-title::before {
+            content: '';
+            width: 4px;
+            height: 20px;
+            background: #0077b5;
+            border-radius: 2px;
+        }
+        
+        textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            resize: vertical;
+            transition: border-color 0.3s;
+        }
+        
+        textarea:focus {
+            outline: none;
+            border-color: #0077b5;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .btn-primary {
+            background: #0077b5;
+            color: white;
+        }
+        
+        .btn-primary:hover:not(:disabled) {
+            background: #006399;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,119,181,0.3);
+        }
+        
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+        
+        .btn-secondary:hover:not(:disabled) {
+            background: #e0e0e0;
+        }
+        
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .btn-danger:hover:not(:disabled) {
+            background: #c82333;
+        }
+        
+        input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #0077b5;
+        }
+        
+        .settings-grid {
+            display: grid;
+            gap: 15px;
+        }
+        
+        .setting-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .setting-label {
+            min-width: 140px;
+            font-size: 14px;
+            color: #555;
+        }
+        
+        .checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 0;
+        }
+        
+        .checkbox-row input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        
+        .checkbox-row label {
+            font-size: 14px;
+            color: #333;
+            cursor: pointer;
+        }
+        
+        #logArea {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 16px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            height: 350px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        
+        .status-bar {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+        }
+        
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .badge-idle {
+            background: #e9ecef;
+            color: #495057;
+        }
+        
+        .badge-running {
+            background: #28a745;
+            color: white;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .progress-bar {
+            width: 200px;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #0077b5, #00a0dc);
+            transition: width 0.3s;
+        }
+        
+        .stats {
+            display: flex;
+            gap: 20px;
+        }
+        
+        .stat {
+            font-size: 14px;
+        }
+        
+        .stat-value {
+            font-weight: 600;
+            color: #0077b5;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📋 LinkedIn Job Scraper</h1>
+            <p>Scrape LinkedIn job postings and save as JSON or Markdown</p>
+        </div>
+        
+        <div class="content">
+            <!-- Status Bar -->
+            <div class="status-bar" id="statusBar">
+                <div class="status-item">
+                    <span>Status:</span>
+                    <span class="status-badge badge-idle" id="statusBadge">Idle</span>
+                </div>
+                <div class="status-item">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                    </div>
+                    <span id="progressText">0 / 0</span>
+                </div>
+                <div class="stats">
+                    <div class="stat">✅ <span class="stat-value" id="successCount">0</span></div>
+                    <div class="stat">❌ <span class="stat-value" id="failCount">0</span></div>
+                </div>
+            </div>
+            
+            <!-- URL Input -->
+            <div class="section">
+                <div class="section-title">Job URLs</div>
+                <textarea id="urlInput" rows="8" placeholder="Enter LinkedIn job URLs (one per line)...&#10;&#10;Example:&#10;https://linkedin.com/jobs/view/123456&#10;https://linkedin.com/jobs/view/789012"></textarea>
+                <div class="button-group">
+                    <button class="btn-secondary" onclick="loadFromFile()">
+                        📂 Load from File
+                    </button>
+                    <button class="btn-secondary" onclick="clearUrls()">
+                        🗑️ Clear
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Settings -->
+            <div class="section">
+                <div class="section-title">Settings</div>
+                <div class="settings-grid">
+                    <div class="setting-row">
+                        <span class="setting-label">JSON Output:</span>
+                        <input type="text" id="jsonDir" value="./output">
+                    </div>
+                    <div class="checkbox-row">
+                        <input type="checkbox" id="markdownCheckbox" checked>
+                        <label for="markdownCheckbox">Create Markdown files</label>
+                    </div>
+                    <div class="setting-row">
+                        <span class="setting-label">Markdown Output:</span>
+                        <input type="text" id="mdDir" value="./output">
+                    </div>
+                    <div class="checkbox-row">
+                        <input type="checkbox" id="headlessCheckbox" checked>
+                        <label for="headlessCheckbox">Run browser in background (headless mode)</label>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Progress Log -->
+            <div class="section">
+                <div class="section-title">Progress Log</div>
+                <div id="logArea">Ready to start scraping...</div>
+                <div class="button-group" style="margin-top: 10px;">
+                    <button class="btn-primary" id="startBtn" onclick="startScraping()">
+                        ▶️ Start Scraping
+                    </button>
+                    <button class="btn-danger" id="stopBtn" onclick="stopScraping()" disabled>
+                        ⏹️ Stop
+                    </button>
+                    <button class="btn-secondary" onclick="clearLogs()">
+                        🗑️ Clear Log
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <input type="file" id="fileInput" style="display: none;" accept=".txt" onchange="handleFileSelect(event)">
+    
+    <script>
+        let eventSource = null;
+        let isScrapingRunning = false;
+        
+        // Connect to log stream
+        function connectLogStream() {
+            if (eventSource) {
+                eventSource.close();
+            }
+            
+            eventSource = new EventSource('/api/logs/stream');
+            
+            eventSource.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                if (data.message) {
+                    appendLog(data.message);
+                }
+            };
+            
+            eventSource.onerror = function() {
+                console.log('Log stream disconnected, reconnecting...');
+                setTimeout(connectLogStream, 1000);
+            };
+        }
+        
+        // Update status periodically
+        function updateStatus() {
+            fetch('/api/status')
+                .then(r => r.json())
+                .then(data => {
+                    isScrapingRunning = data.is_running;
+                    
+                    // Update status badge
+                    const badge = document.getElementById('statusBadge');
+                    if (data.is_running) {
+                        badge.textContent = 'Running';
+                        badge.className = 'status-badge badge-running';
+                    } else {
+                        badge.textContent = 'Idle';
+                        badge.className = 'status-badge badge-idle';
+                    }
+                    
+                    // Update progress
+                    const progress = data.total > 0 ? (data.progress / data.total) * 100 : 0;
+                    document.getElementById('progressFill').style.width = progress + '%';
+                    document.getElementById('progressText').textContent = `${data.progress} / ${data.total}`;
+                    
+                    // Update stats
+                    document.getElementById('successCount').textContent = data.successful;
+                    document.getElementById('failCount').textContent = data.failed;
+                    
+                    // Update buttons
+                    document.getElementById('startBtn').disabled = data.is_running;
+                    document.getElementById('stopBtn').disabled = !data.is_running;
+                });
+        }
+        
+        function appendLog(message) {
+            const logArea = document.getElementById('logArea');
+            logArea.textContent += message + '\n';
+            logArea.scrollTop = logArea.scrollHeight;
+        }
+        
+        function clearLogs() {
+            fetch('/api/clear-logs', { method: 'POST' })
+                .then(() => {
+                    document.getElementById('logArea').textContent = 'Logs cleared.\n';
+                });
+        }
+        
+        function startScraping() {
+            const urls = document.getElementById('urlInput').value;
+            const jsonDir = document.getElementById('jsonDir').value;
+            const mdDir = document.getElementById('mdDir').value;
+            const createMarkdown = document.getElementById('markdownCheckbox').checked;
+            const headless = document.getElementById('headlessCheckbox').checked;
+            
+            if (!urls.trim()) {
+                alert('Please enter at least one URL');
+                return;
+            }
+            
+            fetch('/api/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    urls: urls,
+                    json_dir: jsonDir,
+                    md_dir: mdDir,
+                    create_markdown: createMarkdown,
+                    headless: headless
+                })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    alert(data.error);
+                }
+            })
+            .catch(err => {
+                alert('Error starting scraping: ' + err);
+            });
+        }
+        
+        function stopScraping() {
+            fetch('/api/stop', { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) {
+                        alert(data.error);
+                    }
+                });
+        }
+        
+        function clearUrls() {
+            document.getElementById('urlInput').value = '';
+        }
+        
+        function loadFromFile() {
+            document.getElementById('fileInput').click();
+        }
+        
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    document.getElementById('urlInput').value = e.target.result;
+                };
+                reader.readAsText(file);
+            }
+        }
+        
+        // Initialize
+        connectLogStream();
+        updateStatus();
+        setInterval(updateStatus, 1000);
+    </script>
+</body>
+</html>

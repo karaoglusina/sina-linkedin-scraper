@@ -1,14 +1,19 @@
 # LinkedIn Job Scraper
 
-A fast Python CLI tool to scrape LinkedIn job postings and save them as JSON or Markdown files.
+A fast Python tool to scrape LinkedIn job postings and save them as JSON or Markdown files.
+
+Available in both **Web GUI** and **CLI** versions!
 
 ## Features
 
+- 🌐 **Web-based GUI** - Beautiful, modern interface that works everywhere
+- ⌨️ **CLI** - Command-line for power users and automation
 - Scrape single jobs or batch from URL list
 - Export to JSON format (all jobs in one file)
 - Export to Markdown with YAML frontmatter (one file per job)
 - HTML to Markdown conversion preserves formatting (bold, lists, etc.)
 - Browser reuse for fast batch processing (~1s per job)
+- Real-time progress tracking and logs
 - Customizable output directories
 
 ## Installation
@@ -25,13 +30,18 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 # Install dependencies
 pip install -r requirements.txt
 
+# For Web GUI, also install Flask
+pip install flask
+
 # Install Playwright browsers (one-time)
 playwright install chromium
 ```
 
 ## Usage
 
-### Single Job
+### CLI Version
+
+#### Single Job
 
 ```bash
 # JSON only (saved to ./output/jobs.json)
@@ -44,7 +54,7 @@ python -m src.main "https://linkedin.com/jobs/view/..." -m
 python -m src.main "https://linkedin.com/jobs/view/..." -m --md-dir ~/Documents/Jobs
 ```
 
-### Batch Scraping
+#### Batch Scraping
 
 Create a file with URLs (one per line):
 
@@ -135,6 +145,55 @@ location: "Amsterdam"
 - Apply type (Easy Apply / External)
 - Poster name & profile URL
 
-## License
+## Troubleshooting
 
-MIT
+**GUI Issues on macOS with Python 3.13+**
+
+If you encounter tkinter compatibility errors (like "macOS 26 required"), use the web-based GUI instead:
+
+```bash
+python web_gui.py
+```
+
+The web GUI works on all platforms without compatibility issues.
+
+---
+
+### GUI Version (Web-Based)
+
+A modern web-based GUI that works on all platforms without compatibility issues.
+
+**Installation:**
+
+```bash
+# Install Flask (required for web GUI)
+pip install flask
+```
+
+**Launch:**
+
+```bash
+python web_gui.py
+```
+
+Then open your browser to: `http://127.0.0.1:5000`
+
+**Features:**
+- 🖥️ Beautiful, modern web interface
+- 📝 Text area to paste multiple URLs
+- 📂 Load URLs from file
+- 🗂️ Configurable output directories
+- ✅ Toggle Markdown export
+- 👁️ Show/hide browser option for debugging
+- 📊 Real-time progress tracking with status bar
+- 🎯 Live log streaming
+- ▶️ Start/Stop controls
+
+**Quick Start:**
+1. Run `python web_gui.py`
+2. Open browser to http://127.0.0.1:5000
+3. Paste LinkedIn job URLs (one per line) or click "Load from File"
+4. Configure output directories (default: `./output`)
+5. Toggle "Create Markdown files" if you want `.md` output
+6. Click "▶️ Start Scraping"
+7. Watch real-time progress!
