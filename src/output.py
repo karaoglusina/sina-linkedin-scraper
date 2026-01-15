@@ -24,6 +24,8 @@ import re
 from pathlib import Path
 from typing import Optional
 
+from markdownify import markdownify as md
+
 from .models import JobData
 
 
@@ -87,7 +89,7 @@ def save_as_markdown(job: JobData, output_dir: Path) -> Path:
     Save job data as a Markdown file with YAML frontmatter.
     
     The filename is: "<Job Title> <Company Name>.md"
-    The description goes in the body, all other fields in frontmatter.
+    The description (converted from HTML) goes in the body, all other fields in frontmatter.
     
     Args:
         job: JobData object to save
@@ -106,13 +108,55 @@ def save_as_markdown(job: JobData, output_dir: Path) -> Path:
     # Build YAML frontmatter
     frontmatter = _build_frontmatter(job)
     
+    # Convert HTML description to Markdown for better formatting
+    description_md = _html_to_markdown(job.description_html)
+    
     # Combine frontmatter and description
-    content = f"---\n{frontmatter}---\n\n{job.description}"
+    content = f"---\n{frontmatter}---\n\n{description_md}"
     
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(content)
     
     return output_path
+
+
+def _html_to_markdown(html: str) -> str:
+    """
+    Convert HTML to clean Markdown.
+    
+    Uses markdownify library to convert:
+    - <strong>/<b> → **bold**
+    - <em>/<i> → *italic*
+    - <ul><li> → bullet points
+    - <br> → newlines
+    - <a href="..."> → [text](url)
+    """
+    if not html:
+        return ""
+    
+    # Convert HTML to Markdown
+    markdown = md(
+        html,
+        heading_style="ATX",        # Use # for headers
+        bullets="-",                 # Use - for bullet points
+        strip=["button", "script", "style", "icon"],  # Remove unwanted elements
+    )
+    
+    # Clean up excessive whitespace
+    markdown = re.sub(r'\n{3,}', '\n\n', markdown)  # Max 2 newlines
+    markdown = re.sub(r' +', ' ', markdown)          # Single spaces
+    
+    # Remove "Show more" / "Show less" text
+    markdown = re.sub(r'\s*Show more\s*', '', markdown)
+    markdown = re.sub(r'\s*Show less\s*', '', markdown)
+    
+    # Convert middle dot bullet points (·) to proper markdown bullets
+    markdown = re.sub(r'^·\s*', '- ', markdown, flags=re.MULTILINE)
+    markdown = re.sub(r'\n·\s*', '\n- ', markdown)
+    
+    markdown = markdown.strip()
+    
+    return markdown
 
 
 def _build_frontmatter(job: JobData) -> str:
