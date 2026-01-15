@@ -6,15 +6,11 @@ Available in both **Web GUI** and **CLI** versions!
 
 ## Features
 
-- 🌐 **Web-based GUI** - Beautiful, modern interface that works everywhere
-- ⌨️ **CLI** - Command-line for power users and automation
+- Web-based GUI and CLI
 - Scrape single jobs or batch from URL list
 - Export to JSON format (all jobs in one file)
 - Export to Markdown with YAML frontmatter (one file per job)
 - HTML to Markdown conversion preserves formatting (bold, lists, etc.)
-- Browser reuse for fast batch processing (~1s per job)
-- Real-time progress tracking and logs
-- Customizable output directories
 
 ## Installation
 
@@ -149,19 +145,17 @@ location: "Amsterdam"
 
 **GUI Issues on macOS with Python 3.13+**
 
-If you encounter tkinter compatibility errors (like "macOS 26 required"), use the web-based GUI instead:
+If you encounter tkinter compatibility errors (like "macOS 26 required"), use the web-based GUI instead. It works on all platforms without compatibility issues.
 
 ```bash
 python web_gui.py
 ```
 
-The web GUI works on all platforms without compatibility issues.
-
 ---
 
 ### GUI Version (Web-Based)
 
-A modern web-based GUI that works on all platforms without compatibility issues.
+A modern web-based GUI that 
 
 **Installation:**
 
@@ -178,16 +172,6 @@ python web_gui.py
 
 Then open your browser to: `http://127.0.0.1:5000`
 
-**Features:**
-- 🖥️ Beautiful, modern web interface
-- 📝 Text area to paste multiple URLs
-- 📂 Load URLs from file
-- 🗂️ Configurable output directories
-- ✅ Toggle Markdown export
-- 👁️ Show/hide browser option for debugging
-- 📊 Real-time progress tracking with status bar
-- 🎯 Live log streaming
-- ▶️ Start/Stop controls
 
 **Quick Start:**
 1. Run `python web_gui.py`
