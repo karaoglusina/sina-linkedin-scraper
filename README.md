@@ -2,12 +2,11 @@
 
 A fast Python tool to scrape LinkedIn job postings and save them as JSON or Markdown files.
 
-Available in both **Web GUI** and **CLI** versions!
 
 ## Features
 
 - Web-based GUI and CLI
-- Scrape single jobs or batch from URL list
+- Batch scrape from URL list
 - Export to JSON format (all jobs in one file)
 - Export to Markdown with YAML frontmatter (one file per job)
 - HTML to Markdown conversion preserves formatting (bold, lists, etc.)
