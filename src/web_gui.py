@@ -9,6 +9,7 @@ from flask import Flask, render_template, request, jsonify, Response
 from pathlib import Path
 import json
 import time
+import os
 from threading import Thread, Lock
 from queue import Queue
 from typing import List, Dict
@@ -18,7 +19,13 @@ from .parser import extract_job_data
 from .output import save_as_json, save_as_markdown
 
 
-app = Flask(__name__)
+# Get the directory where this file is located
+current_dir = Path(__file__).parent
+
+# Initialize Flask with explicit template folder
+app = Flask(__name__, 
+            template_folder=str(current_dir / 'templates'),
+            static_folder=str(current_dir / 'static'))
 
 # Global state
 scraping_state = {
@@ -126,7 +133,25 @@ def scrape_jobs_thread(urls: List[str], json_dir: Path, md_dir: Path, create_mar
 @app.route('/')
 def index():
     """Serve the main page."""
-    return render_template('index.html')
+    try:
+        return render_template('index.html')
+    except Exception as e:
+        return f"""
+        <h1>Template Error</h1>
+        <p>Error loading template: {e}</p>
+        <p>Template folder: {app.template_folder}</p>
+        <p>Current dir: {os.getcwd()}</p>
+        """, 500
+
+
+@app.route('/health')
+def health():
+    """Health check endpoint."""
+    return jsonify({
+        'status': 'ok',
+        'template_folder': app.template_folder,
+        'templates_exist': os.path.exists(app.template_folder)
+    })
 
 
 @app.route('/api/start', methods=['POST'])
@@ -222,12 +247,32 @@ def clear_logs():
     return jsonify({'success': True})
 
 
-def launch_web_gui(host='127.0.0.1', port=5000, debug=False):
+def launch_web_gui(host='127.0.0.1', port=5001, debug=False):
     """Launch the web GUI."""
+    import socket
+    
+    # Check if port is available
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    result = sock.connect_ex((host, port))
+    sock.close()
+    
+    if result == 0:
+        print(f"⚠️  Port {port} is already in use. Trying port {port + 1}...")
+        port = port + 1
+    
     print(f"\n🌐 LinkedIn Job Scraper Web GUI")
     print(f"   Open in browser: http://{host}:{port}")
     print(f"   Press Ctrl+C to stop\n")
-    app.run(host=host, port=port, debug=debug)
+    
+    try:
+        app.run(host=host, port=port, debug=debug, threaded=True)
+    except OSError as e:
+        if "Address already in use" in str(e):
+            print(f"\n❌ Error: Port {port} is already in use.")
+            print(f"   Try running with a different port:")
+            print(f"   python web_gui.py --port {port + 1}\n")
+        else:
+            raise
 
 
 if __name__ == '__main__':

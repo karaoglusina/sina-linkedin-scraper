@@ -173,6 +173,7 @@ def _build_frontmatter(job: JobData) -> str:
         ("jobUrl", job.job_url),
         ("companyName", job.company_name),
         ("companyUrl", job.company_url),
+        ("companyLogoUrl", job.company_logo_url),
         ("location", job.location),
         ("postedTime", job.posted_time),
         ("applicationsCount", job.applications_count),

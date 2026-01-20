@@ -23,6 +23,7 @@ class JobData:
     job_url: str
     company_name: str
     company_url: str
+    company_logo_url: str
     location: str
     posted_time: str
     applications_count: str
@@ -52,6 +53,7 @@ class JobData:
             "jobUrl": self.job_url,
             "companyName": self.company_name,
             "companyUrl": self.company_url,
+            "companyLogoUrl": self.company_logo_url,
             "location": self.location,
             "postedTime": self.posted_time,
             "applicationsCount": self.applications_count,

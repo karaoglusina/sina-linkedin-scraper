@@ -45,6 +45,7 @@ def extract_job_data(page: Page, url: str) -> JobData:
     
     # Extract URLs
     company_url = _extract_href(page, ".topcard__org-name-link")
+    company_logo_url = _extract_company_logo(page)
     job_url = url  # Use the provided URL
     
     # Extract timing info
@@ -76,6 +77,7 @@ def extract_job_data(page: Page, url: str) -> JobData:
         job_url=job_url,
         company_name=company_name,
         company_url=company_url,
+        company_logo_url=company_logo_url,
         location=location,
         posted_time=posted_time,
         applications_count=applications_count,
@@ -141,6 +143,30 @@ def _extract_html(page: Page, selector: str) -> str:
     try:
         element = page.locator(selector).first
         return element.inner_html() or ""
+    except Exception:
+        return ""
+
+
+def _extract_image_src(page: Page, selector: str) -> str:
+    """
+    Extract the src attribute from an img element.
+    
+    LinkedIn company logos are typically in img tags with various selectors.
+    Handles lazy-loaded images that may not be "visible" but exist in DOM.
+    """
+    try:
+        locator = page.locator(selector)
+        # Check if any elements match (count is fast, doesn't wait)
+        if locator.count() == 0:
+            return ""
+        
+        element = locator.first
+        # Get src attribute directly - don't check visibility (lazy images aren't "visible")
+        src = element.get_attribute("src", timeout=1000) or ""
+        # LinkedIn sometimes uses data-delayed-url for lazy loading
+        if not src:
+            src = element.get_attribute("data-delayed-url", timeout=500) or ""
+        return src
     except Exception:
         return ""
 
@@ -272,6 +298,104 @@ def _extract_apply_info(page: Page, fallback_url: str) -> tuple:
     
     return apply_type, apply_url
 
+def _extract_company_logo(page: Page) -> str:
+    """
+    Extract the company logo URL from the job page.
+    
+    LinkedIn displays company logos in the top card area.
+    Uses multiple strategies with JavaScript evaluation for reliable extraction.
+    """
+    try:
+        # Strategy 1: Use JavaScript to comprehensively search the DOM
+        logo_url = page.evaluate("""
+            () => {
+                // Look for images in the top card area with various attributes
+                
+                // 1. Find by alt text containing "logo"
+                const logoByAlt = document.querySelector('.top-card-layout__entity-image img[alt*="logo"], img[alt*="logo"]');
+                if (logoByAlt?.src && logoByAlt.src.startsWith('http')) {
+                    return logoByAlt.src;
+                }
+                
+                // 2. Find by LinkedIn's entity photo classes
+                const selectors = [
+                    'img.EntityPhoto-square-2',
+                    'img.EntityPhoto-square-3',
+                    'img.EntityPhoto-square-4',
+                    'img.ivm-view-attr__img--centered',
+                    '.top-card-layout__entity-image img',
+                    '.topcard__org-name-link img',
+                    'img.artdeco-entity-image'
+                ];
+                
+                for (const selector of selectors) {
+                    const img = document.querySelector(selector);
+                    if (img?.src && img.src.startsWith('http')) {
+                        return img.src;
+                    }
+                }
+                
+                // 3. Find any img with 'company-logo' or 'company' in src
+                const allImgs = Array.from(document.querySelectorAll('img'));
+                for (const img of allImgs) {
+                    if (img.src && (
+                        img.src.includes('company-logo') || 
+                        img.src.includes('/company/') ||
+                        (img.alt && img.alt.toLowerCase().includes('logo'))
+                    )) {
+                        return img.src;
+                    }
+                }
+                
+                // 4. Check data attributes for lazy-loaded images
+                for (const img of allImgs) {
+                    const dataSrc = img.getAttribute('data-delayed-url') || 
+                                   img.getAttribute('data-src') ||
+                                   img.getAttribute('data-ghost-url');
+                    if (dataSrc && dataSrc.startsWith('http')) {
+                        return dataSrc;
+                    }
+                }
+                
+                return '';
+            }
+        """)
+        
+        if logo_url:
+            return logo_url
+            
+    except Exception as e:
+        # Fallback to CSS selector approach if JavaScript fails
+        pass
+    
+    # Strategy 2: Try direct CSS selectors with Playwright
+    selectors = [
+        ".top-card-layout__entity-image img",
+        ".topcard__org-name-link img",
+        "img.EntityPhoto-square-2",
+        "img.EntityPhoto-square-3",
+        "img.artdeco-entity-image",
+        "img[alt*='logo']",
+    ]
+    
+    for selector in selectors:
+        try:
+            locator = page.locator(selector)
+            if locator.count() > 0:
+                element = locator.first
+                # Try src first
+                src = element.get_attribute("src", timeout=1000)
+                if src and src.startswith("http"):
+                    return src
+                # Try data attributes
+                for attr in ["data-delayed-url", "data-src", "data-ghost-url"]:
+                    src = element.get_attribute(attr, timeout=500)
+                    if src and src.startswith("http"):
+                        return src
+        except Exception:
+            continue
+    
+    return ""
 
 def _parse_relative_time(text: str) -> str:
     """
