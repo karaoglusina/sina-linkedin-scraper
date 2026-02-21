@@ -26,6 +26,7 @@ class JobData:
     company_logo_url: str
     location: str
     posted_time: str
+    posted_at: str
     applications_count: str
     description: str
     contract_type: str
@@ -35,6 +36,8 @@ class JobData:
     apply_type: str
     apply_url: str
     company_id: str
+    applied_time: Optional[str]
+    applied_at: Optional[str]
     poster_profile_url: Optional[str]
     poster_full_name: Optional[str]
     description_html: str
@@ -56,6 +59,7 @@ class JobData:
             "companyLogoUrl": self.company_logo_url,
             "location": self.location,
             "postedTime": self.posted_time,
+            "postedAt": self.posted_at,
             "applicationsCount": self.applications_count,
             "description": self.description,
             "contractType": self.contract_type,
@@ -65,6 +69,8 @@ class JobData:
             "applyType": self.apply_type,
             "applyUrl": self.apply_url,
             "companyId": self.company_id,
+            "appliedTime": self.applied_time,
+            "appliedAt": self.applied_at,
             "posterProfileUrl": self.poster_profile_url,
             "posterFullName": self.poster_full_name,
             "descriptionHtml": self.description_html,

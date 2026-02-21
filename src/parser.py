@@ -22,39 +22,143 @@ from playwright.sync_api import Page
 from typing import Optional
 
 from .models import JobData
+from .output import _html_to_markdown
 
 
 def extract_job_data(page: Page, url: str) -> JobData:
     """
     Extract all job data from a LinkedIn job page.
-    
-    This is the main entry point for parsing.
-    It coordinates extraction of all fields and returns a JobData object.
-    
+
+    Supports both the public (logged-out) view and the authenticated
+    (logged-in) view, which use entirely different CSS selectors.
+
     Args:
         page: Playwright page object with loaded job posting
         url: Original URL (used for ID extraction and as fallback)
-        
+
     Returns:
         JobData object with all extracted fields
     """
-    # Extract basic info from the top card
-    title = _extract_text(page, ".top-card-layout__title")
-    company_name = _extract_text(page, ".topcard__org-name-link")
-    location = _extract_text(page, ".topcard__flavor--bullet")
-    
-    # Extract URLs
-    company_url = _extract_href(page, ".topcard__org-name-link")
+    # --- Basic info ---
+    # CSS class names in the logged-in SPA view are hashed and unstable.
+    # We try named selectors first (logged-out), then fall back to JS evaluation
+    # which uses structural/semantic queries that survive class-name changes.
+    # ------------------------------------------------------------------
+    # Title: In the logged-in SPA the title is a <p> inside [role="toolbar"],
+    # NOT a heading element.  The toolbar first <p> without a bullet separator
+    # (•) is the job title.
+    # ------------------------------------------------------------------
+    title = _extract_text_first(page,
+        ".top-card-layout__title",   # logged-out
+        ".topcard__title",
+    ) or _extract_via_js(page, """
+        (() => {
+            const jobPage = document.querySelector('[data-view-name="job-detail-page"]');
+            if (jobPage) {
+                const ps = Array.from(jobPage.querySelectorAll('p'));
+                for (const p of ps) {
+                    const t = (p.innerText || '').trim();
+                    if (!t || t.length < 2 || t.length > 150) continue;
+                    if (p.querySelector('a')) continue;
+                    if (t.includes('•') || t.includes('·')) continue;
+                    if (/notification|applied|application|step in|take the|no response|insight/i.test(t)) continue;
+                    return t;
+                }
+            }
+            return '';
+        })()
+    """)
+
+    # ------------------------------------------------------------------
+    # Company name: first /company/ link inside main (not nav/header)
+    # ------------------------------------------------------------------
+    company_name = _extract_text_first(page,
+        ".topcard__org-name-link",
+    ) or _extract_via_js(page, """
+        (() => {
+            const main = document.querySelector('main') || document.body;
+            const links = Array.from(main.querySelectorAll('a[href*="/company/"]'));
+            for (const a of links) {
+                const t = (a.innerText || '').trim();
+                if (t && t.length < 120 && !t.includes('•')) return t;
+            }
+            return '';
+        })()
+    """)
+
+    # ------------------------------------------------------------------
+    # Location: parse from the info line in [role="toolbar"] or main
+    # Format: "Company • Location (WorkType)" or "Location · time · applicants"
+    # ------------------------------------------------------------------
+    location = _extract_text_first(page,
+        ".topcard__flavor--bullet",
+    ) or _extract_via_js(page, """
+        (() => {
+            const main = document.querySelector('main') || document.body;
+            const ps = Array.from(main.querySelectorAll('p'));
+            for (const p of ps) {
+                const t = (p.innerText || '').trim();
+                // Look for the info line with "· X ago ·" or a location pattern
+                const m = t.match(/^(.+?)\\s*·\\s*\\d+\\s+(day|week|month|hour|minute)/i);
+                if (m) return m[1].trim();
+            }
+            return '';
+        })()
+    """)
+
+    # --- URLs ---
+    company_url = _extract_href_first(page,
+        ".topcard__org-name-link",
+    ) or _extract_via_js(page, """
+        (() => {
+            const link = document.querySelector('a[href*="/company/"]');
+            return link ? link.href : '';
+        })()
+    """)
+
     company_logo_url = _extract_company_logo(page)
-    job_url = url  # Use the provided URL
-    
-    # Extract timing info
-    posted_time = _extract_text(page, ".posted-time-ago__text")
-    applications_count = _extract_text(page, ".num-applicants__caption")
-    
-    # Extract description (both text and HTML)
-    description = _extract_text(page, ".description__text")
-    description_html = _extract_html(page, ".description__text")
+    # Normalise the job URL — strip query params and fragment
+    _parsed = urlparse(url)
+    job_url = f"{_parsed.scheme}://{_parsed.netloc}{_parsed.path}"
+
+    # --- Timing / applicants ---
+    posted_time = _extract_text_first(page,
+        ".posted-time-ago__text",
+    ) or _extract_via_js(page, """
+        (() => {
+            const spans = Array.from(document.querySelectorAll('span'));
+            const t = spans.find(s => /\\d+\\s+(day|week|month|hour|minute)s?\\s+ago/i.test(s.innerText));
+            return t?.innerText?.trim() || '';
+        })()
+    """)
+
+    applications_count = _extract_text_first(page,
+        ".num-applicants__caption",
+    ) or _extract_via_js(page, """
+        (() => {
+            const spans = Array.from(document.querySelectorAll('span'));
+            const t = spans.find(s => /applicant/i.test(s.innerText) && s.innerText.length < 60);
+            return t?.innerText?.trim() || '';
+        })()
+    """)
+
+    # --- Description ---
+    # Logged-out view uses .description__text.
+    # Logged-in SPA uses data-testid="expandable-text-box" inside
+    # the "About the job" section — this is a stable LinkedIn test ID.
+    description_html = _extract_html_first(page,
+        ".description__text",
+        "#job-details",
+        '[data-testid="expandable-text-box"]',
+    ) or _extract_via_js(page, """
+        (() => {
+            const el = document.querySelector('[data-testid="expandable-text-box"]')
+                     || document.querySelector('#job-details')
+                     || document.querySelector('.jobs-description');
+            return el ? el.innerHTML : '';
+        })()
+    """)
+    description = _html_to_markdown(description_html) if description_html else ""
     
     # Extract job criteria (seniority, employment type, etc.)
     criteria = _extract_job_criteria(page)
@@ -69,7 +173,27 @@ def extract_job_data(page: Page, url: str) -> JobData:
     
     # Calculate published date from relative time
     published_at = _parse_relative_time(posted_time)
-    
+    posted_at = datetime.strptime(published_at, "%Y-%m-%d").strftime("%Y-%m-%d")
+
+    # --- Application status (logged-in SPA only) ---
+    # If the user has applied, there's an "Application submitted" text followed
+    # by a sibling <p> with the relative time (e.g. "1 month ago", "now").
+    applied_time = _extract_via_js(page, """
+        (() => {
+            const ps = Array.from(document.querySelectorAll('p'));
+            const submitted = ps.find(p => /application submitted/i.test(p.innerText));
+            if (!submitted) return '';
+            const next = submitted.nextElementSibling
+                      || submitted.parentElement?.querySelector('p:nth-child(2)');
+            if (next && next.tagName === 'P') {
+                const t = next.innerText.trim();
+                if (t && t.length < 40) return t;
+            }
+            return '';
+        })()
+    """)
+    applied_at = _parse_relative_time(applied_time) if applied_time else ""
+
     return JobData(
         id=job_id,
         published_at=published_at,
@@ -80,6 +204,7 @@ def extract_job_data(page: Page, url: str) -> JobData:
         company_logo_url=company_logo_url,
         location=location,
         posted_time=posted_time,
+        posted_at=posted_at,
         applications_count=applications_count,
         description=description,
         contract_type=criteria.get("Employment type", ""),
@@ -89,27 +214,22 @@ def extract_job_data(page: Page, url: str) -> JobData:
         apply_type=apply_type,
         apply_url=apply_url,
         company_id=company_id,
+        applied_time=applied_time or None,
+        applied_at=applied_at or None,
         poster_profile_url=poster_info.get("url"),
         poster_full_name=poster_info.get("name"),
         description_html=description_html,
     )
 
 
-def _extract_text(page: Page, selector: str) -> str:
+def _extract_via_js(page: Page, js_expr: str) -> str:
     """
-    Extract and clean text content from an element.
-    
-    KEY CONCEPT: Safe extraction
-    - Always handle the case where the element doesn't exist
-    - Clean whitespace from extracted text
-    - Return empty string instead of None for consistency
+    Evaluate a JS expression and return the result as a cleaned string.
+    Used as a fallback when CSS class names are hashed/unstable (logged-in SPA).
     """
     try:
-        element = page.locator(selector).first
-        text = element.text_content() or ""
-        # Clean up common noise
-        text = text.strip()
-        # Remove "Show more" / "Show less" buttons text
+        result = page.evaluate(js_expr)
+        text = (result or "").strip()
         text = re.sub(r'\s*Show more\s*', '', text)
         text = re.sub(r'\s*Show less\s*', '', text)
         return text.strip()
@@ -117,16 +237,40 @@ def _extract_text(page: Page, selector: str) -> str:
         return ""
 
 
-def _extract_href(page: Page, selector: str) -> str:
-    """
-    Extract href attribute and convert to absolute URL.
-    
-    LinkedIn often uses relative URLs. We convert them to absolute URLs
-    for consistency and usability.
-    """
+def _extract_text(page: Page, selector: str) -> str:
+    """Extract and clean text content from a single selector."""
     try:
-        element = page.locator(selector).first
-        href = element.get_attribute("href") or ""
+        locator = page.locator(selector)
+        if locator.count() == 0:   # instant check — no waiting
+            return ""
+        text = locator.first.text_content(timeout=2000) or ""
+        text = text.strip()
+        text = re.sub(r'\s*Show more\s*', '', text)
+        text = re.sub(r'\s*Show less\s*', '', text)
+        return text.strip()
+    except Exception:
+        return ""
+
+
+def _extract_text_first(page: Page, *selectors: str) -> str:
+    """
+    Try each selector in order; return the first non-empty text found.
+    Handles both the logged-out (public) and logged-in LinkedIn page layouts.
+    """
+    for selector in selectors:
+        result = _extract_text(page, selector)
+        if result:
+            return result
+    return ""
+
+
+def _extract_href(page: Page, selector: str) -> str:
+    """Extract href attribute and convert to absolute URL."""
+    try:
+        locator = page.locator(selector)
+        if locator.count() == 0:
+            return ""
+        href = locator.first.get_attribute("href", timeout=2000) or ""
         if href and not href.startswith("http"):
             return urljoin("https://www.linkedin.com", href)
         return href
@@ -134,17 +278,33 @@ def _extract_href(page: Page, selector: str) -> str:
         return ""
 
 
+def _extract_href_first(page: Page, *selectors: str) -> str:
+    """Try each selector in order; return the first non-empty href found."""
+    for selector in selectors:
+        result = _extract_href(page, selector)
+        if result:
+            return result
+    return ""
+
+
 def _extract_html(page: Page, selector: str) -> str:
-    """
-    Extract inner HTML of an element.
-    
-    We keep the HTML for rich formatting in the output.
-    """
+    """Extract inner HTML of an element."""
     try:
-        element = page.locator(selector).first
-        return element.inner_html() or ""
+        locator = page.locator(selector)
+        if locator.count() == 0:
+            return ""
+        return locator.first.inner_html(timeout=2000) or ""
     except Exception:
         return ""
+
+
+def _extract_html_first(page: Page, *selectors: str) -> str:
+    """Try each selector in order; return the first non-empty inner HTML found."""
+    for selector in selectors:
+        result = _extract_html(page, selector)
+        if result:
+            return result
+    return ""
 
 
 def _extract_image_src(page: Page, selector: str) -> str:
@@ -161,9 +321,7 @@ def _extract_image_src(page: Page, selector: str) -> str:
             return ""
         
         element = locator.first
-        # Get src attribute directly - don't check visibility (lazy images aren't "visible")
-        src = element.get_attribute("src", timeout=1000) or ""
-        # LinkedIn sometimes uses data-delayed-url for lazy loading
+        src = element.get_attribute("src", timeout=500) or ""
         if not src:
             src = element.get_attribute("data-delayed-url", timeout=500) or ""
         return src
@@ -231,9 +389,9 @@ def _extract_poster_info(page: Page) -> dict:
             ".message-the-recruiter a, .hirer-card__hirer-information a"
         ).first
         
-        if poster_link.is_visible():
-            info["url"] = poster_link.get_attribute("href") or ""
-            info["name"] = poster_link.text_content().strip()
+        if poster_link.count() > 0 and poster_link.is_visible(timeout=500):
+            info["url"] = poster_link.get_attribute("href", timeout=500) or ""
+            info["name"] = (poster_link.text_content(timeout=500) or "").strip()
             
             if info["url"] and not info["url"].startswith("http"):
                 info["url"] = urljoin("https://www.linkedin.com", info["url"])

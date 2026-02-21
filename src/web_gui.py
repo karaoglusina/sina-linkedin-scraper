@@ -9,12 +9,16 @@ from flask import Flask, render_template, request, jsonify, Response
 from pathlib import Path
 import json
 import time
+import random
 import os
 from threading import Thread, Lock
 from queue import Queue
 from typing import List, Dict
 
-from .scraper import create_browser, navigate_to_job
+from .scraper import (
+    create_browser, create_browser_persistent, setup_scraper_profile,
+    navigate_to_job, DEFAULT_PROFILE_DIR,
+)
 from .parser import extract_job_data
 from .output import save_as_json, save_as_markdown
 
@@ -26,6 +30,10 @@ current_dir = Path(__file__).parent
 app = Flask(__name__, 
             template_folder=str(current_dir / 'templates'),
             static_folder=str(current_dir / 'static'))
+
+# Global state for profile setup
+_setup_running = False
+_setup_lock = Lock()
 
 # Global state
 scraping_state = {
@@ -55,7 +63,15 @@ def is_valid_linkedin_url(url: str) -> bool:
     return "linkedin.com" in url_lower and "/jobs/view/" in url_lower
 
 
-def scrape_jobs_thread(urls: List[str], json_dir: Path, md_dir: Path, create_markdown: bool, headless: bool):
+def scrape_jobs_thread(
+    urls: List[str],
+    json_dir: Path,
+    md_dir: Path,
+    create_markdown: bool,
+    headless: bool,
+    use_profile: bool = False,
+    profile_path: str = "",
+):
     """Background thread for scraping jobs."""
     global scraping_state
     
@@ -68,12 +84,21 @@ def scrape_jobs_thread(urls: List[str], json_dir: Path, md_dir: Path, create_mar
         scraping_state['failed_urls'] = []
     
     log_message(f"📋 Starting scrape of {len(urls)} jobs\n")
-    
+
+    # Choose the right browser context
+    if use_profile:
+        resolved_path = profile_path or DEFAULT_PROFILE_DIR
+        browser_ctx = create_browser_persistent(profile_dir=resolved_path)
+        log_message(f"👤 Using saved profile: {resolved_path}\n")
+    else:
+        browser_ctx = create_browser(headless=headless)
+        mode = "background" if headless else "visible"
+        log_message(f"🌐 Browser launched ({mode})\n")
+
     try:
-        with create_browser(headless=headless) as browser:
-            mode = "background" if headless else "visible"
-            log_message(f"🌐 Browser launched ({mode})\n")
-            
+        log_message("🔄 Launching browser, please wait...")
+        with browser_ctx as browser:
+            log_message("✅ Browser ready!\n")
             for i, url in enumerate(urls, 1):
                 with state_lock:
                     if not scraping_state['is_running']:
@@ -85,7 +110,9 @@ def scrape_jobs_thread(urls: List[str], json_dir: Path, md_dir: Path, create_mar
                 log_message(f"[{i}/{len(urls)}] Scraping: {url[:60]}...")
                 
                 try:
+                    log_message("  🌍 Navigating to page...")
                     page = navigate_to_job(browser, url)
+                    log_message("  📄 Page loaded, extracting data...")
                     job_data = extract_job_data(page, url)
                     page.close()
                     
@@ -101,9 +128,11 @@ def scrape_jobs_thread(urls: List[str], json_dir: Path, md_dir: Path, create_mar
                     with state_lock:
                         scraping_state['successful'] += 1
                     
-                    # Small delay between jobs
+                    # Random delay between jobs to avoid bot detection
                     if i < len(urls) and scraping_state['is_running']:
-                        time.sleep(0.5)
+                        delay = round(random.uniform(2.0, 5.0), 1)
+                        log_message(f"  ⏳ Waiting {delay}s before next job...")
+                        time.sleep(delay)
                 
                 except Exception as e:
                     log_message(f"  ❌ Failed: {e}")
@@ -169,6 +198,8 @@ def start_scraping():
     md_dir = Path(data.get('md_dir', './output'))
     create_markdown = data.get('create_markdown', True)
     headless = data.get('headless', True)
+    use_profile = data.get('use_profile', False)
+    profile_path = data.get('profile_path', '')
     
     # Parse and validate URLs
     urls = []
@@ -191,7 +222,7 @@ def start_scraping():
     # Start scraping thread
     thread = Thread(
         target=scrape_jobs_thread,
-        args=(urls, json_dir, md_dir, create_markdown, headless),
+        args=(urls, json_dir, md_dir, create_markdown, headless, use_profile, profile_path),
         daemon=True
     )
     thread.start()
@@ -245,6 +276,51 @@ def clear_logs():
     with state_lock:
         scraping_state['logs'] = []
     return jsonify({'success': True})
+
+
+@app.route('/api/setup-profile', methods=['POST'])
+def start_profile_setup():
+    """
+    Open a visible Playwright browser so the user can log into LinkedIn.
+    The session is saved to the profile directory and reused for scraping.
+    """
+    global _setup_running
+
+    with _setup_lock:
+        if _setup_running:
+            return jsonify({'error': 'Profile setup already in progress'}), 400
+        _setup_running = True
+
+    data = request.json or {}
+    profile_dir = data.get('profile_dir', DEFAULT_PROFILE_DIR)
+
+    def run_setup():
+        global _setup_running
+        try:
+            with setup_scraper_profile(profile_dir=profile_dir) as context:
+                # Wait until the user closes the browser window.
+                # When the window is closed the context becomes disconnected and
+                # context.pages raises an exception — that's our exit signal.
+                try:
+                    while context.pages:
+                        time.sleep(0.5)
+                except Exception:
+                    pass  # Browser was closed by the user — normal exit
+        except Exception as e:
+            print(f"Profile setup error: {e}")
+        finally:
+            with _setup_lock:
+                _setup_running = False
+
+    thread = Thread(target=run_setup, daemon=True)
+    thread.start()
+    return jsonify({'success': True, 'profile_dir': profile_dir})
+
+
+@app.route('/api/setup-profile/status')
+def setup_profile_status():
+    """Check whether the profile setup browser is currently open."""
+    return jsonify({'is_running': _setup_running})
 
 
 def launch_web_gui(host='127.0.0.1', port=5001, debug=False):

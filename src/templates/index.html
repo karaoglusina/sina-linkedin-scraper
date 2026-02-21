@@ -334,6 +334,25 @@
                         <input type="checkbox" id="headlessCheckbox" checked>
                         <label for="headlessCheckbox">Run browser in background (headless mode)</label>
                     </div>
+                    <div class="checkbox-row">
+                        <input type="checkbox" id="profileCheckbox" onchange="toggleProfilePath()">
+                        <label for="profileCheckbox">👤 Use saved profile (access login-gated jobs)</label>
+                    </div>
+                    <div id="profileSection" style="display:none;">
+                        <div class="setting-row" style="margin-bottom:8px;">
+                            <span class="setting-label">Profile folder:</span>
+                            <input type="text" id="profilePath" placeholder="~/.sina-scraper-profile">
+                        </div>
+                        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                            <button class="btn-secondary" id="setupProfileBtn" onclick="setupProfile()" type="button">
+                                🔑 Setup Profile (Log In)
+                            </button>
+                            <span id="setupStatus" style="font-size:13px; color:#555;"></span>
+                        </div>
+                        <div style="background:#e8f5e9; border:1px solid #a5d6a7; border-radius:6px; padding:10px 14px; font-size:13px; color:#2e7d32; margin-top:8px;">
+                            ℹ️ First time? Click <strong>Setup Profile</strong> — a browser opens, log into LinkedIn, then close the browser. After that, scraping will reuse your session automatically.
+                        </div>
+                    </div>
                 </div>
             </div>
             
@@ -434,12 +453,19 @@
             const mdDir = document.getElementById('mdDir').value;
             const createMarkdown = document.getElementById('markdownCheckbox').checked;
             const headless = document.getElementById('headlessCheckbox').checked;
-            
+            const useProfile = document.getElementById('profileCheckbox').checked;
+            const profilePath = document.getElementById('profilePath').value.trim();
+
             if (!urls.trim()) {
                 alert('Please enter at least one URL');
                 return;
             }
-            
+
+            if (useProfile && !profilePath) {
+                alert('Please enter the path to your Chrome profile directory.');
+                return;
+            }
+
             fetch('/api/start', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -448,7 +474,9 @@
                     json_dir: jsonDir,
                     md_dir: mdDir,
                     create_markdown: createMarkdown,
-                    headless: headless
+                    headless: headless,
+                    use_profile: useProfile,
+                    profile_path: profilePath
                 })
             })
             .then(r => r.json())
@@ -491,7 +519,89 @@
             }
         }
         
+        // Persist output paths and profile settings using localStorage
+        const JSON_DIR_KEY     = 'scraper_json_dir';
+        const MD_DIR_KEY       = 'scraper_md_dir';
+        const PROFILE_PATH_KEY = 'scraper_profile_path';
+
+        function saveOutputPaths() {
+            localStorage.setItem(JSON_DIR_KEY,     document.getElementById('jsonDir').value);
+            localStorage.setItem(MD_DIR_KEY,       document.getElementById('mdDir').value);
+            localStorage.setItem(PROFILE_PATH_KEY, document.getElementById('profilePath').value);
+        }
+
+        function loadOutputPaths() {
+            const savedJsonDir     = localStorage.getItem(JSON_DIR_KEY);
+            const savedMdDir       = localStorage.getItem(MD_DIR_KEY);
+            let   savedProfilePath = localStorage.getItem(PROFILE_PATH_KEY);
+
+            if (savedJsonDir) document.getElementById('jsonDir').value = savedJsonDir;
+            if (savedMdDir)   document.getElementById('mdDir').value   = savedMdDir;
+
+            // If the saved path looks like the system Chrome profile, discard it —
+            // that path is incompatible with Playwright's bundled Chromium.
+            if (savedProfilePath && savedProfilePath.includes('Application Support/Google/Chrome')) {
+                localStorage.removeItem(PROFILE_PATH_KEY);
+                savedProfilePath = null;
+            }
+            document.getElementById('profilePath').value = savedProfilePath || '~/.sina-scraper-profile';
+        }
+
+        function toggleProfilePath() {
+            const checked = document.getElementById('profileCheckbox').checked;
+            document.getElementById('profileSection').style.display = checked ? 'block' : 'none';
+            // Profile mode always runs visibly — disable headless when profile is on
+            document.getElementById('headlessCheckbox').disabled = checked;
+            if (checked) document.getElementById('headlessCheckbox').checked = false;
+        }
+
+        function setupProfile() {
+            const profileDir = document.getElementById('profilePath').value.trim() || '~/.sina-scraper-profile';
+            const btn = document.getElementById('setupProfileBtn');
+            const status = document.getElementById('setupStatus');
+
+            btn.disabled = true;
+            status.textContent = '⏳ Browser opening…';
+
+            fetch('/api/setup-profile', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ profile_dir: profileDir })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    status.textContent = '❌ ' + data.error;
+                    btn.disabled = false;
+                    return;
+                }
+                status.textContent = '🌐 Browser open — log into LinkedIn, then close the browser window.';
+                // Poll until setup is done
+                const poll = setInterval(() => {
+                    fetch('/api/setup-profile/status')
+                        .then(r => r.json())
+                        .then(s => {
+                            if (!s.is_running) {
+                                clearInterval(poll);
+                                status.textContent = '✅ Profile saved! You can now start scraping.';
+                                btn.disabled = false;
+                            }
+                        });
+                }, 1500);
+            })
+            .catch(err => {
+                status.textContent = '❌ Error: ' + err;
+                btn.disabled = false;
+            });
+        }
+
+        // Save on every keystroke so the value is always current
+        document.getElementById('jsonDir').addEventListener('input', saveOutputPaths);
+        document.getElementById('mdDir').addEventListener('input', saveOutputPaths);
+        document.getElementById('profilePath').addEventListener('input', saveOutputPaths);
+
         // Initialize
+        loadOutputPaths();
         connectLogStream();
         updateStatus();
         setInterval(updateStatus, 1000);

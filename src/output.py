@@ -102,7 +102,7 @@ def save_as_markdown(job: JobData, output_dir: Path) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Generate safe filename
-    filename = _sanitize_filename(f"{job.title} - {job.company_name}.md")
+    filename = _sanitize_filename(f"{job.company_name} - {job.title}.md")
     output_path = output_dir / filename
     
     # Build YAML frontmatter
@@ -111,8 +111,18 @@ def save_as_markdown(job: JobData, output_dir: Path) -> Path:
     # Convert HTML description to Markdown for better formatting
     description_md = _html_to_markdown(job.description_html)
     
-    # Combine frontmatter and description
-    content = f"---\n{frontmatter}---\n\n{description_md}"
+    # Dataviewjs block to render the company logo
+    dataviewjs_block = (
+        "```dataviewjs\n"
+        "let url = dv.current().companyLogoUrl;\n"
+        "if (url) {\n"
+        '    dv.el("img", "", { attr: { src: url, style: "width:100px;" } });\n'
+        "}\n"
+        "```"
+    )
+
+    # Combine frontmatter, dataviewjs block, and description
+    content = f"---\n{frontmatter}---\n\n{dataviewjs_block}\n\n{description_md}"
     
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(content)
@@ -176,6 +186,7 @@ def _build_frontmatter(job: JobData) -> str:
         ("companyLogoUrl", job.company_logo_url),
         ("location", job.location),
         ("postedTime", job.posted_time),
+        ("postedAt", job.posted_at),
         ("applicationsCount", job.applications_count),
         ("contractType", job.contract_type),
         ("experienceLevel", job.experience_level),
@@ -184,6 +195,8 @@ def _build_frontmatter(job: JobData) -> str:
         ("applyType", job.apply_type),
         ("applyUrl", job.apply_url),
         ("companyId", job.company_id),
+        ("appliedTime", job.applied_time),
+        ("appliedAt", job.applied_at),
         ("posterProfileUrl", job.poster_profile_url),
         ("posterFullName", job.poster_full_name),
     ]
@@ -194,7 +207,13 @@ def _build_frontmatter(job: JobData) -> str:
             # Escape quotes in the value
             escaped = str(value).replace('"', '\\"')
             lines.append(f'{key}: "{escaped}"')
-    
+
+    # Status checkboxes (unchecked by default)
+    lines.append('🔵ShortListed: false')
+    lines.append('🟡AppliedSimply: false')
+    lines.append('🟢AppliedProperly: false')
+    lines.append('🟤Archived: false')
+
     return "\n".join(lines) + "\n"
 
 
