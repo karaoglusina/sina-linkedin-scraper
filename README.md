@@ -1,15 +1,12 @@
-# LinkedIn Job Scraper
+# Linkedin Job Scraper
 
-A fast Python tool to scrape LinkedIn job postings and save them as JSON or Markdown files.
-
-
-## Features
+A Python tool to scrape LinkedIn job postings from URL list and save them as JSON or Markdown files. 
 
 - Web-based GUI and CLI
-- Batch scrape from URL list
-- Export to JSON format (all jobs in one file)
-- Export to Markdown with YAML frontmatter (one file per job)
-- HTML to Markdown conversion preserves formatting (bold, lists, etc.)
+- Option to Scrape while logged in (saved profile session for login-gated jobs)
+- Export to JSON format (all jobs in one file) or Markdown with YAML frontmatter (one file per job)
+
+![LinkedIn Scraper](scraper.png)
 
 ## Installation
 
@@ -34,10 +31,7 @@ playwright install chromium
 
 ## Usage
 
-
-### GUI Version (Web-Based)
-
-A modern web-based GUI that 
+### Web-Based GUI
 
 **Installation:**
 
@@ -55,6 +49,7 @@ python web_gui.py
 Then open your browser to: `http://127.0.0.1:5001`
 
 **Options:**
+
 ```bash
 # Use a different port
 python web_gui.py --port 8080
@@ -63,8 +58,8 @@ python web_gui.py --port 8080
 python web_gui.py --debug
 ```
 
-
 **Quick Start:**
+
 1. Run `python web_gui.py`
 2. Open browser to http://127.0.0.1:5001
 3. Paste LinkedIn job URLs (one per line) or click "Load from File"
@@ -75,6 +70,16 @@ python web_gui.py --debug
 
 **Note:** Port 5001 is used by default to avoid conflicts with macOS AirPlay Receiver (which uses port 5000).
 
+**Saved Profile (Scrape While Logged In):**
+
+To access login-gated job postings, you can use a saved browser profile with your LinkedIn session:
+
+1. In the web GUI, check "👤 Use saved profile"
+2. Click "🔑 Setup Profile" — a browser window opens
+3. Log into LinkedIn manually, then close the browser
+4. Your session is saved and will be reused for all future scraping sessions
+
+The profile is stored at `~/.sina-scraper-profile` by default. This allows the scraper to access jobs that require authentication.
 
 ### CLI Version
 
@@ -114,14 +119,14 @@ python -m src.main --batch jobs.txt -m -o ./data --md-dir ~/Documents/Jobs
 
 ## CLI Options
 
-| Option | Description | Default |
-|--------|-------------|---------|
-| `url` | Single LinkedIn job URL | - |
-| `--batch FILE` | File with URLs (one per line) | - |
-| `-m, --markdown` | Also create Markdown files | Off |
-| `-o, --output` | JSON output directory | `./output` |
-| `--md-dir` | Markdown output directory | Same as `-o` |
-| `--no-headless` | Show browser window (debug) | Off |
+| Option           | Description                   | Default      |
+| ---------------- | ----------------------------- | ------------ |
+| `url`            | Single LinkedIn job URL       | -            |
+| `--batch FILE`   | File with URLs (one per line) | -            |
+| `-m, --markdown` | Also create Markdown files    | Off          |
+| `-o, --output`   | JSON output directory         | `./output`   |
+| `--md-dir`       | Markdown output directory     | Same as `-o` |
+| `--no-headless`  | Show browser window (debug)   | Off          |
 
 ## Output
 
@@ -164,10 +169,10 @@ location: "Amsterdam"
 
 ## Performance
 
-| Mode | Time per job |
-|------|--------------|
-| Single job | ~2s |
-| Batch (browser reuse) | ~1s |
+| Mode                  | Time per job |
+| --------------------- | ------------ |
+| Single job            | ~2s          |
+| Batch (browser reuse) | ~1s          |
 
 ## Extracted Fields
 
