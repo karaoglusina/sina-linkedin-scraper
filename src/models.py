@@ -26,7 +26,6 @@ class JobData:
     company_logo_url: str
     location: str
     posted_time: str
-    posted_at: str
     applications_count: str
     description: str
     contract_type: str
@@ -59,7 +58,6 @@ class JobData:
             "companyLogoUrl": self.company_logo_url,
             "location": self.location,
             "postedTime": self.posted_time,
-            "postedAt": self.posted_at,
             "applicationsCount": self.applications_count,
             "description": self.description,
             "contractType": self.contract_type,

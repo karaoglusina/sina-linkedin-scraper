@@ -34,6 +34,48 @@ playwright install chromium
 
 ## Usage
 
+
+### GUI Version (Web-Based)
+
+A modern web-based GUI that 
+
+**Installation:**
+
+```bash
+# Install Flask (required for web GUI)
+pip install flask
+```
+
+**Launch:**
+
+```bash
+python web_gui.py
+```
+
+Then open your browser to: `http://127.0.0.1:5001`
+
+**Options:**
+```bash
+# Use a different port
+python web_gui.py --port 8080
+
+# Enable debug mode
+python web_gui.py --debug
+```
+
+
+**Quick Start:**
+1. Run `python web_gui.py`
+2. Open browser to http://127.0.0.1:5001
+3. Paste LinkedIn job URLs (one per line) or click "Load from File"
+4. Configure output directories (default: `./output`)
+5. Toggle "Create Markdown files" if you want `.md` output
+6. Click "▶️ Start Scraping"
+7. Watch real-time progress!
+
+**Note:** Port 5001 is used by default to avoid conflicts with macOS AirPlay Receiver (which uses port 5000).
+
+
 ### CLI Version
 
 #### Single Job
@@ -151,43 +193,3 @@ python web_gui.py
 ```
 
 ---
-
-### GUI Version (Web-Based)
-
-A modern web-based GUI that 
-
-**Installation:**
-
-```bash
-# Install Flask (required for web GUI)
-pip install flask
-```
-
-**Launch:**
-
-```bash
-python web_gui.py
-```
-
-Then open your browser to: `http://127.0.0.1:5001`
-
-**Options:**
-```bash
-# Use a different port
-python web_gui.py --port 8080
-
-# Enable debug mode
-python web_gui.py --debug
-```
-
-
-**Quick Start:**
-1. Run `python web_gui.py`
-2. Open browser to http://127.0.0.1:5001
-3. Paste LinkedIn job URLs (one per line) or click "Load from File"
-4. Configure output directories (default: `./output`)
-5. Toggle "Create Markdown files" if you want `.md` output
-6. Click "▶️ Start Scraping"
-7. Watch real-time progress!
-
-**Note:** Port 5001 is used by default to avoid conflicts with macOS AirPlay Receiver (which uses port 5000).

@@ -53,17 +53,12 @@ def extract_job_data(page: Page, url: str) -> JobData:
         ".topcard__title",
     ) or _extract_via_js(page, """
         (() => {
-            const jobPage = document.querySelector('[data-view-name="job-detail-page"]');
-            if (jobPage) {
-                const ps = Array.from(jobPage.querySelectorAll('p'));
-                for (const p of ps) {
-                    const t = (p.innerText || '').trim();
-                    if (!t || t.length < 2 || t.length > 150) continue;
-                    if (p.querySelector('a')) continue;
-                    if (t.includes('•') || t.includes('·')) continue;
-                    if (/notification|applied|application|step in|take the|no response|insight/i.test(t)) continue;
-                    return t;
-                }
+            // Most reliable: parse from page title — LinkedIn always sets it to
+            // "(N) Job Title | Company | LinkedIn" or "Job Title | Company | LinkedIn"
+            const pageTitle = (document.title || '').replace(/^\\(\\d+\\)\\s*/, '');
+            const parts = pageTitle.split('|').map(s => s.trim());
+            if (parts.length >= 2 && parts[0] && parts[0].length < 150) {
+                return parts[0];
             }
             return '';
         })()
@@ -87,24 +82,29 @@ def extract_job_data(page: Page, url: str) -> JobData:
     """)
 
     # ------------------------------------------------------------------
-    # Location: parse from the info line in [role="toolbar"] or main
-    # Format: "Company • Location (WorkType)" or "Location · time · applicants"
+    # Location: In the SPA, location/time/applicants live in a single <p>
+    # separated by "·": "Location · 2 months ago · 65 applicants"
+    # inside [data-view-name="job-detail-page"].
     # ------------------------------------------------------------------
-    location = _extract_text_first(page,
-        ".topcard__flavor--bullet",
-    ) or _extract_via_js(page, """
+    _info_line_js = """
         (() => {
-            const main = document.querySelector('main') || document.body;
-            const ps = Array.from(main.querySelectorAll('p'));
+            const jp = document.querySelector('[data-view-name="job-detail-page"]')
+                    || document.querySelector('main') || document.body;
+            const ps = Array.from(jp.querySelectorAll('p'));
             for (const p of ps) {
                 const t = (p.innerText || '').trim();
-                // Look for the info line with "· X ago ·" or a location pattern
-                const m = t.match(/^(.+?)\\s*·\\s*\\d+\\s+(day|week|month|hour|minute)/i);
-                if (m) return m[1].trim();
+                if (t.includes('·') && /\\d+\\s+(day|week|month|hour|minute|year)s?\\s+ago/i.test(t))
+                    return t;
             }
             return '';
         })()
-    """)
+    """
+    _info_line = _extract_via_js(page, _info_line_js)
+    _info_parts = [p.strip() for p in _info_line.split('·')] if _info_line else []
+
+    location = _extract_text_first(page,
+        ".topcard__flavor--bullet",
+    ) or (_info_parts[0] if len(_info_parts) >= 1 else "")
 
     # --- URLs ---
     company_url = _extract_href_first(page,
@@ -122,25 +122,14 @@ def extract_job_data(page: Page, url: str) -> JobData:
     job_url = f"{_parsed.scheme}://{_parsed.netloc}{_parsed.path}"
 
     # --- Timing / applicants ---
+    # Reuse _info_parts parsed from the "Location · time · applicants" line
     posted_time = _extract_text_first(page,
         ".posted-time-ago__text",
-    ) or _extract_via_js(page, """
-        (() => {
-            const spans = Array.from(document.querySelectorAll('span'));
-            const t = spans.find(s => /\\d+\\s+(day|week|month|hour|minute)s?\\s+ago/i.test(s.innerText));
-            return t?.innerText?.trim() || '';
-        })()
-    """)
+    ) or (_info_parts[1] if len(_info_parts) >= 2 else "")
 
     applications_count = _extract_text_first(page,
         ".num-applicants__caption",
-    ) or _extract_via_js(page, """
-        (() => {
-            const spans = Array.from(document.querySelectorAll('span'));
-            const t = spans.find(s => /applicant/i.test(s.innerText) && s.innerText.length < 60);
-            return t?.innerText?.trim() || '';
-        })()
-    """)
+    ) or (_info_parts[2] if len(_info_parts) >= 3 else "")
 
     # --- Description ---
     # Logged-out view uses .description__text.
@@ -173,7 +162,6 @@ def extract_job_data(page: Page, url: str) -> JobData:
     
     # Calculate published date from relative time
     published_at = _parse_relative_time(posted_time)
-    posted_at = datetime.strptime(published_at, "%Y-%m-%d").strftime("%Y-%m-%d")
 
     # --- Application status (logged-in SPA only) ---
     # If the user has applied, there's an "Application submitted" text followed
@@ -181,7 +169,7 @@ def extract_job_data(page: Page, url: str) -> JobData:
     applied_time = _extract_via_js(page, """
         (() => {
             const ps = Array.from(document.querySelectorAll('p'));
-            const submitted = ps.find(p => /application submitted/i.test(p.innerText));
+            const submitted = ps.find(p => /application submitted|applied on/i.test(p.innerText));
             if (!submitted) return '';
             const next = submitted.nextElementSibling
                       || submitted.parentElement?.querySelector('p:nth-child(2)');
@@ -204,7 +192,6 @@ def extract_job_data(page: Page, url: str) -> JobData:
         company_logo_url=company_logo_url,
         location=location,
         posted_time=posted_time,
-        posted_at=posted_at,
         applications_count=applications_count,
         description=description,
         contract_type=criteria.get("Employment type", ""),
@@ -378,26 +365,65 @@ def _extract_job_criteria(page: Page) -> dict:
 def _extract_poster_info(page: Page) -> dict:
     """
     Extract information about who posted the job.
-    
-    Some job postings show the recruiter/poster's profile.
+
+    Logged-out view: .message-the-recruiter / .hirer-card__hirer-information
+    Logged-in SPA:   "Meet the hiring team" section with a[href*="/in/"] link
     """
     info = {}
-    
+
+    # Strategy 1: logged-out named selectors
     try:
-        # Poster section might have different class names
         poster_link = page.locator(
             ".message-the-recruiter a, .hirer-card__hirer-information a"
         ).first
-        
+
         if poster_link.count() > 0 and poster_link.is_visible(timeout=500):
             info["url"] = poster_link.get_attribute("href", timeout=500) or ""
             info["name"] = (poster_link.text_content(timeout=500) or "").strip()
-            
+
             if info["url"] and not info["url"].startswith("http"):
                 info["url"] = urljoin("https://www.linkedin.com", info["url"])
     except Exception:
         pass
-    
+
+    # Strategy 2: logged-in SPA — find the poster name in the
+    # "Meet the hiring team" section.  The outer <a> wraps the whole card
+    # (name + degree + bio + "Job poster"), so we must find the INNER
+    # <a href="/in/..."> which contains only the name text.
+    if not info.get("name"):
+        try:
+            result = page.evaluate("""
+                (() => {
+                    const main = document.querySelector('main') || document.body;
+                    // Find all /in/ profile links; pick the deepest (innermost) one
+                    // that has short, clean text — that's the name-only link.
+                    const links = Array.from(main.querySelectorAll('a[href*="/in/"]'));
+                    for (const a of links) {
+                        // Skip if this <a> contains another <a> (it's a wrapper)
+                        if (a.querySelector('a[href*="/in/"]')) continue;
+                        // Get only direct text (childNodes), not nested elements
+                        let name = '';
+                        for (const node of a.childNodes) {
+                            if (node.nodeType === 3) name += node.textContent;
+                        }
+                        name = name.trim();
+                        if (!name) name = (a.innerText || '').split('\\n')[0].trim();
+                        const href = a.href || '';
+                        if (!name || name.length < 3 || name.length > 60) continue;
+                        if (/notification|message|sign in|job poster/i.test(name)) continue;
+                        // Must look like a person name (letters, spaces, hyphens, apostrophes)
+                        if (!/^[\\p{L}\\s.'-]+$/u.test(name)) continue;
+                        return { name, url: href };
+                    }
+                    return null;
+                })()
+            """)
+            if result:
+                info["name"] = result["name"]
+                info["url"] = result["url"]
+        except Exception:
+            pass
+
     return info
 
 

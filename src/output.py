@@ -21,6 +21,7 @@ Example:
 
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -156,9 +157,11 @@ def _html_to_markdown(html: str) -> str:
     markdown = re.sub(r'\n{3,}', '\n\n', markdown)  # Max 2 newlines
     markdown = re.sub(r' +', ' ', markdown)          # Single spaces
     
-    # Remove "Show more" / "Show less" text
+    # Remove "Show more" / "Show less" / "… more" text
     markdown = re.sub(r'\s*Show more\s*', '', markdown)
     markdown = re.sub(r'\s*Show less\s*', '', markdown)
+    markdown = re.sub(r'\s*…\s*more\s*$', '', markdown)
+    markdown = re.sub(r'\s*\.\.\.\s*more\s*$', '', markdown)
     
     # Convert middle dot bullet points (·) to proper markdown bullets
     markdown = re.sub(r'^·\s*', '- ', markdown, flags=re.MULTILINE)
@@ -176,43 +179,89 @@ def _build_frontmatter(job: JobData) -> str:
     All fields except description go here.
     Values are quoted to handle special characters.
     """
-    fields = [
-        ("id", job.id),
-        ("publishedAt", job.published_at),
-        ("title", job.title),
-        ("jobUrl", job.job_url),
-        ("companyName", job.company_name),
-        ("companyUrl", job.company_url),
-        ("companyLogoUrl", job.company_logo_url),
-        ("location", job.location),
-        ("postedTime", job.posted_time),
-        ("postedAt", job.posted_at),
-        ("applicationsCount", job.applications_count),
-        ("contractType", job.contract_type),
-        ("experienceLevel", job.experience_level),
-        ("workType", job.work_type),
-        ("sector", job.sector),
-        ("applyType", job.apply_type),
-        ("applyUrl", job.apply_url),
-        ("companyId", job.company_id),
-        ("appliedTime", job.applied_time),
-        ("appliedAt", job.applied_at),
-        ("posterProfileUrl", job.poster_profile_url),
-        ("posterFullName", job.poster_full_name),
-    ]
-    
+    # Build frontmatter in the specified order
     lines = []
-    for key, value in fields:
-        if value:  # Only include non-empty values
-            # Escape quotes in the value
-            escaped = str(value).replace('"', '\\"')
-            lines.append(f'{key}: "{escaped}"')
+    
+    # Core job info (always present)
+    if job.id:
+        lines.append(f'id: "{job.id}"')
+    if job.company_name:
+        escaped = str(job.company_name).replace('"', '\\"')
+        lines.append(f'companyName: "{escaped}"')
+    if job.title:
+        escaped = str(job.title).replace('"', '\\"')
+        lines.append(f'title: "{escaped}"')
+    if job.location:
+        escaped = str(job.location).replace('"', '\\"')
+        lines.append(f'location: "{escaped}"')
+    if job.job_url:
+        lines.append(f'jobUrl: {job.job_url}')
+    if job.apply_url:
+        lines.append(f'applyUrl: {job.apply_url}')
+    if job.posted_time:
+        escaped = str(job.posted_time).replace('"', '\\"')
+        lines.append(f'postedTime: "{escaped}"')
+    if job.published_at:
+        lines.append(f'publishedAt: {job.published_at}')
+    if job.company_id:
+        escaped = str(job.company_id).replace('"', '\\"')
+        lines.append(f'companyId: "{escaped}"')
+    if job.company_url:
+        lines.append(f'companyUrl: {job.company_url}')
+    if job.company_logo_url:
+        lines.append(f'companyLogoUrl: {job.company_logo_url}')
+    if job.applications_count:
+        escaped = str(job.applications_count).replace('"', '\\"')
+        lines.append(f'applicationsCount: "{escaped}"')
+    if job.apply_type:
+        escaped = str(job.apply_type).replace('"', '\\"')
+        lines.append(f'applyType: "{escaped}"')
 
-    # Status checkboxes (unchecked by default)
+    # Status checkboxes (always present, unchecked by default)
+    lines.append('👌Ideal: false')
     lines.append('🔵ShortListed: false')
     lines.append('🟡AppliedSimply: false')
     lines.append('🟢AppliedProperly: false')
+    lines.append('🚩Tracking: false')
+    lines.append('❌Rejected: false')
     lines.append('🟤Archived: false')
+
+    # Document links (always present, empty by default)
+    lines.append('CV_md: ""')
+    lines.append('CV_pdf: ""')
+    lines.append('letter: ""')
+    lines.append('working_md: ""')
+
+    # Application info (only if applied)
+    if job.applied_time:
+        escaped = str(job.applied_time).replace('"', '\\"')
+        lines.append(f'appliedTime: "{escaped}"')
+    if job.applied_at:
+        lines.append(f'appliedAt: {job.applied_at}')
+
+    # Optional metadata (only if present)
+    if job.contract_type:
+        escaped = str(job.contract_type).replace('"', '\\"')
+        lines.append(f'contractType: "{escaped}"')
+    if job.experience_level:
+        escaped = str(job.experience_level).replace('"', '\\"')
+        lines.append(f'experienceLevel: "{escaped}"')
+    if job.work_type:
+        escaped = str(job.work_type).replace('"', '\\"')
+        lines.append(f'workType: "{escaped}"')
+    if job.sector:
+        escaped = str(job.sector).replace('"', '\\"')
+        lines.append(f'sector: "{escaped}"')
+    if job.poster_profile_url:
+        lines.append(f'posterProfileUrl: {job.poster_profile_url}')
+    if job.poster_full_name:
+        escaped = str(job.poster_full_name).replace('"', '\\"')
+        lines.append(f'posterFullName: "{escaped}"')
+
+    # Timestamps (always present)
+    today = datetime.now().strftime("%Y-%m-%d")
+    lines.append(f'created: {today}')
+    lines.append(f'updated: {today}')
 
     return "\n".join(lines) + "\n"
 
